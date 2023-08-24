@@ -119,7 +119,6 @@ try:
 
     ext_modules = get_extensions()
     cmd_class = {"build_ext": BuildExtension}
-    install_requires.append("torch>=1.8.0")
 except ImportError:
     ext_modules = []
     cmd_class = {}

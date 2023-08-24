@@ -50,6 +50,9 @@ class BaseONNX:
 
     @onnx_path.setter
     def onnx_path(self, onnx_path: str) -> None:
+        onnx_path = onnx_path.strip()
+        if not onnx_path:
+            raise ValueError("onnx_path cannot be empty")
         onnx_path = url_to_local_path(onnx_path)
         if not os.path.exists(onnx_path):
             raise FileNotFoundError(f"onnx_path {onnx_path} does not exist")
