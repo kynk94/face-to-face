@@ -43,7 +43,7 @@ class SCRFDONNX(BaseONNX):
             threshold: threshold for face detection
             onnx_path: path to onnx model
             device: device to run inference on
-            use_padding_trick: add 20% padding to bottom and right to support \
+            use_padding_trick: add padding to bottom and right to support \
                 images with a large face ratio. If False, detection rate of \
                 images like FFHQ dataset is lower than 0.5.
         """
@@ -65,6 +65,32 @@ class SCRFDONNX(BaseONNX):
             anchor_centers[stride] = anchor_center.astype(self.dtype)
         return anchor_centers
 
+    def padding_trick(self, input: ndarray, ratio: float = 0.2) -> ndarray:
+        """
+        Pad the bottom and right side of the image to support images with a
+        large face ratio.
+
+        Args:
+            input: (H, W, 3) RGB image in range [0, 255]
+            ratio: padding ratio
+        Returns:
+            (H', W', 3) padded image in range [0, 255]
+        """
+        H, W = input.shape[:2]
+        pad_size = int(min(H, W) * ratio)
+        if abs(H - W) > pad_size:
+            return input
+
+        if H < W:
+            pad_H = pad_size
+            pad_W = 0
+        elif H == W:
+            pad_H = pad_W = pad_size
+        else:
+            pad_H = 0
+            pad_W = pad_size
+        return np.pad(input, ((0, pad_H), (0, pad_W), (0, 0)))
+
     def __call__(
         self, input: Union[ndarray, Image.Image], center_weight: float = 0.3
     ) -> Tuple[Optional[ndarray], Optional[ndarray]]:
@@ -77,13 +103,9 @@ class SCRFDONNX(BaseONNX):
             keypoints: (N, 5, 2) keypoints in format (x, y)
         """
         input = as_rgb_ndarray(input)
-        H, W = input.shape[:2]
-
-        # add padding to support images with a large face ratio
         if self.use_padding_trick:
-            pad_H, pad_W = int(H * 0.2), int(W * 0.2)
-            input = np.pad(input, ((0, pad_H), (0, pad_W), (0, 0)))
-            H, W = input.shape[:2]
+            input = self.padding_trick(input, ratio=0.2)
+        H, W = input.shape[:2]
 
         ratio = self.resolution / max(H, W)
         resized_input = square_resize(input, self.resolution)
