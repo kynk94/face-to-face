@@ -140,6 +140,11 @@ class BaseONNX:
             device = "cuda:0"
         elif isinstance(device, int):
             device = f"cuda:{device}"
+        elif (
+            not isinstance(device, str)
+            and device.__class__.__name__ == "device"
+        ):
+            device = str(device)
         if device == self.__device:
             return self
         if re.match(r"^cuda:\d+$", device) is None and device != "cpu":
