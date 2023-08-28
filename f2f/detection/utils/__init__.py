@@ -90,8 +90,8 @@ def cal_order_by_area(
     Calculate order of bbox by area.
 
     Args:
-        width: Width of image.
         height: Height of image.
+        width: Width of image.
         bboxes: Shape (F, ge 4), num of bbox and [L, T, R, B, ...etc].
         center_weight: Weight of center point. 0.5 is recommended.
             if 0, sort by area.
