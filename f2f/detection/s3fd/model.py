@@ -61,7 +61,7 @@ class S3FD(nn.Module):
     def __init__(
         self,
         threshold: float = 0.5,
-        pretrained_path: Optional[str] = FAN_S3FD_URL,
+        pretrained_path: str = FAN_S3FD_URL,
     ) -> None:
         super().__init__()
         self.threshold = threshold
