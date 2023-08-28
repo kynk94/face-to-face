@@ -74,5 +74,10 @@ class S3FDONNX(BaseONNX):
                 return None
 
         # sort by area and center
-        area_order = cal_order_by_area(input, bboxes, center_weight)
+        area_order = cal_order_by_area(
+            height=H,
+            width=W,
+            bboxes=bboxes,
+            center_weight=center_weight,
+        )
         return bboxes[area_order]

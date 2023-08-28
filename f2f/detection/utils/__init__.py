@@ -1,16 +1,7 @@
-from typing import List, Optional, Tuple, Union, overload
+from typing import List, Optional, Tuple
 
 import numpy as np
 from numpy import ndarray
-
-from f2f.core import TORCH_AVAILABLE
-
-if TORCH_AVAILABLE:
-    from torch import Tensor
-else:
-
-    class Tensor:  # type: ignore
-        pass
 
 
 def nms(bboxes: ndarray, threshold: float) -> List[int]:
@@ -89,30 +80,18 @@ def distance2kps(
     return np.stack(preds, axis=-1).reshape(-1, 5, 2)
 
 
-@overload
 def cal_order_by_area(
-    image: Tensor, bboxes: Tensor, center_weight: float = 0.0
-) -> Tensor:
-    ...
-
-
-@overload
-def cal_order_by_area(
-    image: ndarray, bboxes: ndarray, center_weight: float = 0.0
-) -> ndarray:
-    ...
-
-
-def cal_order_by_area(
-    image: Union[ndarray, Tensor],
-    bboxes: Union[ndarray, Tensor],
+    height: int,
+    width: int,
+    bboxes: ndarray,
     center_weight: float = 0.0,
-) -> Union[ndarray, Tensor]:
+) -> ndarray:
     """
     Calculate order of bbox by area.
 
     Args:
-        image: Shape (H, W, C).
+        width: Width of image.
+        height: Height of image.
         bboxes: Shape (F, ge 4), num of bbox and [L, T, R, B, ...etc].
         center_weight: Weight of center point. 0.5 is recommended.
             if 0, sort by area.
@@ -128,9 +107,10 @@ def cal_order_by_area(
     if center_weight == 0.0:
         return np.argsort(area)[::-1]
 
-    H, W = image.shape[:2]
     center_distance = (
-        bboxes[:, :2] + bboxes[:, 2:4] - np.array([[W, H]], dtype=np.float32)
+        bboxes[:, :2]
+        + bboxes[:, 2:4]
+        - np.array([[width, height]], dtype=np.float32)
     ) / 2
     center_distance = np.linalg.norm(center_distance, axis=1)
     return np.argsort(area - center_weight * center_distance)[::-1]

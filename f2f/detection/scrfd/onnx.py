@@ -103,6 +103,7 @@ class SCRFDONNX(BaseONNX):
             keypoints: (N, 5, 2) keypoints in format (x, y)
         """
         input = as_rgb_ndarray(input)
+        H_original, W_original = input.shape[:2]
         if self.use_padding_trick:
             input = self.padding_trick(input, ratio=0.2)
         H, W = input.shape[:2]
@@ -132,7 +133,12 @@ class SCRFDONNX(BaseONNX):
                 return None, None
 
         # sort by area and center
-        area_order = cal_order_by_area(input, bboxes, center_weight)
+        area_order = cal_order_by_area(
+            height=H_original,
+            width=W_original,
+            bboxes=bboxes,
+            center_weight=center_weight,
+        )
         reordered_bboxes = bboxes[area_order]
         kpss = kpss[area_order]
         return reordered_bboxes, kpss

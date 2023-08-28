@@ -67,14 +67,15 @@ class S3FD(nn.Module):
         self.threshold = threshold
         self.model = S3FDModel()
 
-        if pretrained_path is None:
-            return
-
         local_path = url_to_local_path(pretrained_path)
         self.model.load_state_dict(
             torch.load(local_path, map_location="cpu"), strict=False
         )
         self.eval()
+        self.requires_grad_(False)
+
+    def train(self, mode: bool = True) -> "S3FD":
+        return super().train(False)
 
     @torch.no_grad()
     def forward(
@@ -109,7 +110,13 @@ class S3FD(nn.Module):
                 continue
 
             # sort by area and center
-            area_order = cal_order_by_area(images[i], bboxes, center_weight)
+            H, W = images[i].shape[-2:]
+            area_order = cal_order_by_area(
+                height=H,
+                width=W,
+                bboxes=bboxes,
+                center_weight=center_weight,
+            )
             bboxes = bboxes[area_order]
             filtered_bboxes.append(bboxes)
         return filtered_bboxes
