@@ -3,7 +3,6 @@ S3FD from face_alignment https://github.com/1adrianb/face-alignment
 face-alignment is licensed under the BSD 3-Clause License.
 """
 import os
-from pathlib import Path
 from typing import List, Optional
 
 import torch
@@ -35,7 +34,8 @@ def export_onnx() -> None:
     for i in range(1, 7):
         output_names.append(f"cls_{i}")
         output_names.append(f"reg_{i}")
-    onnx_path = str(Path(get_onnx_cache_dir()) / os.path.basename(FAN_S3FD_URL))
+    file_name = os.path.splitext(os.path.basename(FAN_S3FD_URL))[0] + ".onnx"
+    onnx_path = os.path.join(get_onnx_cache_dir(), file_name)
     torch.onnx.export(
         model,
         input,

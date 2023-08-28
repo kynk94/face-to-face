@@ -2,6 +2,7 @@ imageio
 imageio-ffmpeg
 numpy
 pillow
+timm
 torch
 torchvision
 tqdm
