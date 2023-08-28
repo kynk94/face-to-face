@@ -95,8 +95,8 @@ def cal_order_by_area(
         bboxes: Shape (F, ge 4), num of bbox and [L, T, R, B, ...etc].
         center_weight: Weight of center point. 0.5 is recommended.
             if 0, sort by area.
-            elif positive, weighting far from center.
-            elif negative, weighting close to center.
+            elif positive, weighting close to center.
+            elif negative, weighting far from center.
     Returns:
         order: Order of bbox.
     """
