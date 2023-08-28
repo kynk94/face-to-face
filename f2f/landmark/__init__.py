@@ -1,3 +1,3 @@
-from .synthetic import FDSyntheticLandmark2dONNX
+from .synthetic import FDSyntheticLM2dONNX
 
-__all__ = ["FDSyntheticLandmark2dONNX"]
+__all__ = ["FDSyntheticLM2dONNX"]
