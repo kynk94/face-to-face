@@ -418,10 +418,10 @@ class FLAMETexture(nn.Module):
     faces_uv: Tensor
     """(1, 9976, 3)"""
 
-    def __init__(self, flame_texture_path: str) -> None:
+    def __init__(self, texture_path: str) -> None:
         super().__init__()
         # mean: (512, 512, 3), tex_dir: (512, 512, 3, 200)
-        tex_space = np.load(url_to_local_path(flame_texture_path))
+        tex_space = np.load(url_to_local_path(texture_path))
         # BFM texture is in BGR order, flip to RGB
         texture_mean = np.flip(tex_space["mean"], axis=2).reshape(1, 1, -1)
         texture_basis = np.flip(tex_space["tex_dir"], axis=2).reshape(
