@@ -104,6 +104,10 @@ def cal_order_by_area(
         np.multiply(bboxes[:, 2] - bboxes[:, 0], bboxes[:, 3] - bboxes[:, 1])
         ** 0.5
     )
+    # weighting area by score
+    if bboxes.shape[-1] > 4:
+        score = bboxes[:, 4]
+        area *= score**2
     if center_weight == 0.0:
         return np.argsort(area)[::-1]
 

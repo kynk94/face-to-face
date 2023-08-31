@@ -49,6 +49,11 @@ def onnx_export() -> None:
 
 
 class SyntheticLM2d(nn.Module):
+    """
+    Landmark 2d model trained on synthetic data.
+    Can compute gradient if needed.
+    """
+
     resolution: int = 256
 
     def __init__(self, checkpoint: Optional[str] = None) -> None:
@@ -61,6 +66,10 @@ class SyntheticLM2d(nn.Module):
                 raise FileNotFoundError(f"Checkpoint {checkpoint} not found")
             self.load_state_dict(
                 torch.load(checkpoint, map_location="cpu")["state_dict"]
+            )
+            print(
+                f"Loaded checkpoint from {checkpoint}. "
+                "Need to call `eval()` and `requires_grad_(False)` manually."
             )
 
     def assert_resolution(self, input: Tensor) -> None:
@@ -86,6 +95,11 @@ class SyntheticLM2d(nn.Module):
 
 
 class SyntheticLM2dInference(SyntheticLM2d):
+    """
+    Landmark 2d model trained on synthetic data.
+    If need gradient, use `SyntheticLM2d` instead.
+    """
+
     # fmt: off
     flip_parts: Tuple[Tuple[int, int], ...] = (
         (0, 16), (1, 15), (2, 14), (3, 13), (4, 12), (5, 11), (6, 10), (7, 9),  # jaw  # noqa
@@ -135,7 +149,7 @@ class SyntheticLM2dInference(SyntheticLM2d):
 
 class FDSyntheticLM2dInference(SyntheticLM2dInference):
     """
-    Face detection + synthetic landmark 2d inference
+    Face detection + Landmark 2d model trained on synthetic data.
     """
 
     FD_model: Union[S3FDONNX, SCRFDONNX]
@@ -206,13 +220,14 @@ class FDSyntheticLM2dInference(SyntheticLM2dInference):
             bboxes: (F, 5) bounding boxes where F is the number of faces
             use_flip: whether to use flip augmentation
         Returns:
-            (F, 68, 2) landmarks in range [-1, 1] where F is the number of faces
+            landmarks: (F, 68, 2) landmarks in input resolution where F is the \
+                number of faces
         """
         H, W = input.size(-2), input.size(-1)
 
         landmarks = []
         for bbox in bboxes:
-            L, T, R, B, _ = bbox
+            L, T, R, B, score = bbox
             bbox_W = R - L
             bbox_H = B - T
 

@@ -82,7 +82,8 @@ class FDSyntheticLM2dONNX(BaseONNX):
             bboxes: (F, 5) bounding boxes where F is the number of faces
             use_flip: whether to use flip augmentation
         Returns:
-            (F, 68, 2) landmarks in range [-1, 1] where F is the number of faces
+            landmarks: (F, 68, 2) landmarks in input resolution where F is the \
+                number of faces
         """
         if isinstance(input, ndarray):
             input = Image.fromarray(input.astype(np.uint8))
