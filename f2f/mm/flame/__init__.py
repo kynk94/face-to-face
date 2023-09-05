@@ -1,3 +1,3 @@
-from .model import FLAME, FLAMETexture
+from .model import FLAME, FLAME_MODELS, FLAMETexture
 
-__all__ = ["FLAME", "FLAMETexture"]
+__all__ = ["FLAME", "FLAME_MODELS", "FLAMETexture"]
