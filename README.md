@@ -6,7 +6,7 @@ Library for easy-to-use human face related trained models.
 
 ### Face Detection
 
-* FAN
+* S3FD (FAN)
 * SCRFD
 
 ### Face Landmark Detection
