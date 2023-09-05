@@ -112,7 +112,7 @@ def get_extensions() -> List[Any]:
     return extensions
 
 
-install_requires = ["ninja"]
+install_requires = ["ninja", "onnxruntime-gpu", "Pillow", "tqdm"]
 
 try:
     from torch.utils.cpp_extension import BuildExtension

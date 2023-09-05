@@ -1,6 +1,7 @@
 imageio
 imageio-ffmpeg
 numpy
+onnxruntime-gpu
 pillow
 timm
 torch

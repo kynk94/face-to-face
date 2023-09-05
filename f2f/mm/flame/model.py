@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from f2f.flame.lbs import (
+from f2f.mm.flame.lbs import (
     batch_rodrigues,
     linear_blend_skinning,
     rot_mat_to_euler,
