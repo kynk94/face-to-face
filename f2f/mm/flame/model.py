@@ -45,6 +45,7 @@ class FLAME_MODELS(Enum):
 
 
 LANDMARK_EMBEDDING = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame_landmark-8095348e.npy"
+TEXTURE_COORD = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame_texture_coord-f8d5f559.pkl"
 
 
 @OnnxExport()
@@ -130,6 +131,10 @@ class FLAME(nn.Module):
     """shape (9976, 3) obj f, triangle faces"""
     v: Tensor
     """shape (5023, 3) obj v, vertex positions"""
+    ft: Tensor
+    """shape (9976, 3) obj ft, texture face indices"""
+    vt: Tensor
+    """shape (5023, 2) obj vt, texture coordinates"""
     identity_coeff: Tensor
     """shape (5023, 3, 300)"""
     expression_coeff: Tensor
@@ -177,6 +182,8 @@ class FLAME(nn.Module):
             raise ValueError()
         with open(url_to_local_path(model.value), "rb") as f:
             flame_model = pickle.load(f, encoding="latin1")  # noqa: S301
+        with open(url_to_local_path(TEXTURE_COORD), "rb") as f:
+            texture_coord = pickle.load(f, encoding="latin1")  # noqa: S301
 
         self.dtype = torch.float32
         self.register_buffer(
@@ -188,6 +195,14 @@ class FLAME(nn.Module):
         # The vertices of the template model
         self.register_buffer(
             "v", to_tensor(to_np(flame_model["v_template"]), dtype=self.dtype)
+        )
+
+        # The texture coordinates of the template model
+        self.register_buffer(
+            "ft", to_tensor(to_np(texture_coord["ft"]), dtype=torch.long)
+        )
+        self.register_buffer(
+            "vt", to_tensor(to_np(texture_coord["vt"]), dtype=self.dtype)
         )
 
         # The shape components and expression
