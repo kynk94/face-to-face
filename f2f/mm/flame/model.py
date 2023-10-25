@@ -39,7 +39,7 @@ from f2f.utils.onnx_ops import OnnxExport
 
 
 class FLAME_MODELS(Enum):
-    _2020 = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2020_generic-efcd14cc.pkl"
+    _2020 = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2020_generic-ffd4033d.pkl"
     _2023 = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2023-8fb1af0d.pkl"
     _2023_NO_JAW = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2023_no_jaw-b291fcd1.pkl"
 
@@ -51,12 +51,12 @@ TEXTURE_COORD = "https://github.com/kynk94/face-to-face/releases/download/weight
 @OnnxExport()
 def onnx_export() -> None:
     model = FLAME().eval()
-    identity_params = torch.zeros(1, 300, dtype=torch.float32)
-    expression_params = torch.zeros(1, 100, dtype=torch.float32)
-    global_rotation = torch.zeros(1, 3, dtype=torch.float32)
-    neck_rotation = torch.zeros(1, 3, dtype=torch.float32)
-    jaw_rotation = torch.zeros(1, 3, dtype=torch.float32)
-    eyes_rotation = torch.zeros(1, 6, dtype=torch.float32)
+    identity_params = torch.randn(1, 300, dtype=torch.float32)
+    expression_params = torch.randn(1, 100, dtype=torch.float32)
+    global_rotation = torch.randn(1, 3, dtype=torch.float32)
+    neck_rotation = torch.randn(1, 3, dtype=torch.float32)
+    jaw_rotation = torch.randn(1, 3, dtype=torch.float32)
+    eyes_rotation = torch.randn(1, 6, dtype=torch.float32)
 
     file_name = (
         os.path.splitext(os.path.basename(FLAME_MODELS._2020.value))[0]
@@ -120,6 +120,25 @@ def to_np(array: Any, dtype: npt.DTypeLike = np.float32) -> npt.NDArray:
     return np.array(array, dtype=dtype)
 
 
+def load_flame(path: str) -> Dict[str, Any]:
+    path = url_to_local_path(path)
+    try:
+        with open(path, "rb") as f:
+            return pickle.load(f, encoding="latin1")  # noqa: S301
+    except ModuleNotFoundError:
+        raise
+    except ImportError:
+        setattr(np, "bool", bool)
+        setattr(np, "int", int)
+        setattr(np, "float", float)
+        setattr(np, "complex", np.complex_)
+        setattr(np, "object", object)
+        setattr(np, "unicode", np.unicode_)
+        setattr(np, "str", str)
+        with open(path, "rb") as f:
+            return pickle.load(f, encoding="latin1")  # noqa: S301
+
+
 class FLAME(nn.Module):
     """
     borrowed from https://github.com/soubhiksanyal/FLAME_PyTorch/blob/master/flame_pytorch/flame.py
@@ -180,8 +199,7 @@ class FLAME(nn.Module):
         super().__init__()
         if not isinstance(model, FLAME_MODELS):
             raise ValueError()
-        with open(url_to_local_path(model.value), "rb") as f:
-            flame_model = pickle.load(f, encoding="latin1")  # noqa: S301
+        flame_model = load_flame(model.value)
         with open(url_to_local_path(TEXTURE_COORD), "rb") as f:
             texture_coord = pickle.load(f, encoding="latin1")  # noqa: S301
 
@@ -284,11 +302,10 @@ class FLAME(nn.Module):
         args:
             identity_params: (N, <=300)
             expression_params: (N, <=100)
-            global_rotation: (N, 3) in radians or (N, 4) in quaternions
-            neck_rotation: (N, 3) in radians or (N, 4) in quaternions
-            jaw_rotation: (N, 3) in radians or (N, 4) in quaternions
-            eyes_rotation: (N, 6) in radians (3 for left, 3 for right) or \
-                (N, 8) in quaternions
+            global_rotation: (N, 3) in radians
+            neck_rotation: (N, 3) in radians
+            jaw_rotation: (N, 3) in radians
+            eyes_rotation: (N, 6) in radians (3 for left, 3 for right)
                 axis direction:
                     x: head center -> left ear (head pitch axis)
                     y: head center -> top (head yaw axis)
