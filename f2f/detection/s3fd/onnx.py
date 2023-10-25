@@ -2,13 +2,14 @@
 S3FD from face_alignment https://github.com/1adrianb/face-alignment
 face-alignment is licensed under the BSD 3-Clause License.
 """
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 import numpy.typing as npt
 from numpy import ndarray
 from PIL import Image
 
+from f2f.core.exceptions import FaceNotFoundError
 from f2f.core.onnx import BaseONNX
 from f2f.detection.utils import cal_order_by_area, nms, s3fd_predictions
 from f2f.utils.image import as_rgb_ndarray, square_resize
@@ -35,7 +36,7 @@ class S3FDONNX(BaseONNX):
 
     def __call__(
         self, input: Union[ndarray, Image.Image], center_weight: float = 0.3
-    ) -> Optional[ndarray]:
+    ) -> ndarray:
         """
         S3FD inference, only support single image inference.
         In test, there is no speed advantage when operating in batches.
@@ -59,7 +60,7 @@ class S3FDONNX(BaseONNX):
 
         bboxes = s3fd_predictions(s3fd_outputs)[0]  # (F, 5)
         if bboxes.size == 0:
-            return None
+            raise FaceNotFoundError("No face detected")
 
         # rescale bboxes to original image size
         bboxes[:, :4] /= ratio
@@ -71,7 +72,7 @@ class S3FDONNX(BaseONNX):
         if self.threshold > 0.0:
             bboxes = bboxes[bboxes[:, -1] > self.threshold]
             if bboxes.size == 0:
-                return None
+                raise FaceNotFoundError("No face detected")
 
         # sort by area and center
         area_order = cal_order_by_area(

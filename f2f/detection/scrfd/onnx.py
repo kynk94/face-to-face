@@ -5,12 +5,13 @@ insightface is licensed under the Apache License 2.0.
 SCRFD: https://arxiv.org/abs/2105.04714
 Backbone of SCRFD: ResNet-50-D https://arxiv.org/abs/1812.01187
 """
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 from numpy import ndarray
 from PIL import Image
 
+from f2f.core.exceptions import FaceNotFoundError
 from f2f.core.onnx import BaseONNX
 from f2f.detection.utils import (
     cal_order_by_area,
@@ -93,7 +94,7 @@ class SCRFDONNX(BaseONNX):
 
     def __call__(
         self, input: Union[ndarray, Image.Image], center_weight: float = 0.3
-    ) -> Tuple[Optional[ndarray], Optional[ndarray]]:
+    ) -> Tuple[ndarray, ndarray]:
         """
         Args:
             input: (H, W, 3) RGB image in range [0, 255]
@@ -115,7 +116,7 @@ class SCRFDONNX(BaseONNX):
         session_input = resized_input.transpose(2, 0, 1)[None] / 127.5 - 1.0
         bboxes, kpss = self.get_session_outputs(session_input)
         if bboxes.size == 0:
-            return None, None
+            raise FaceNotFoundError("No face detected")
 
         # rescale outputs to original image size
         bboxes[:, :4] /= ratio
@@ -130,7 +131,7 @@ class SCRFDONNX(BaseONNX):
         if self.threshold > 0.0:
             bboxes = bboxes[bboxes[:, -1] > self.threshold]
             if bboxes.size == 0:
-                return None, None
+                raise FaceNotFoundError("No face detected")
 
         # sort by area and center
         area_order = cal_order_by_area(
