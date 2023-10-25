@@ -1,8 +1,8 @@
-from typing import Union
+from typing import Any, Optional, Union
 
 import numpy as np
 from numpy import ndarray
-from PIL import Image
+from PIL import ExifTags, Image
 
 
 def as_rgb_ndarray(input: Union[ndarray, Image.Image]) -> ndarray:
@@ -75,3 +75,110 @@ def square_resize(
         constant_values=fill,
     )
     return image.astype(np.float32)
+
+
+def change_keys(
+    dictionary: dict, key_pair: dict, strip_str: bool = False
+) -> dict:
+    new_dictionary = {}
+    for k, v in dictionary.items():
+        new_key = key_pair.get(k, k)
+        if strip_str and isinstance(v, str):
+            v = v.strip()
+        new_dictionary[new_key] = v
+    return new_dictionary
+
+
+def read_str_exif(image: Union[str, Image.Image]) -> dict:
+    if isinstance(image, str):
+        image = Image.open(image)
+    exif = image.getexif()
+    str_exif = change_keys(exif, ExifTags.TAGS)
+    exif_offset = exif.get(ExifTags.IFD.Exif)
+    if not isinstance(exif_offset, dict):
+        exif_offset = exif.get_ifd(ExifTags.IFD.Exif)
+    if exif_offset:
+        str_exif[ExifTags.TAGS[ExifTags.IFD.Exif]] = change_keys(
+            exif_offset, ExifTags.TAGS
+        )
+    gps_info = exif.get(ExifTags.IFD.GPSInfo)
+    if not isinstance(gps_info, dict):
+        gps_info = exif.get_ifd(ExifTags.IFD.GPSInfo)
+    if gps_info:
+        str_exif[ExifTags.TAGS[ExifTags.IFD.GPSInfo]] = change_keys(
+            gps_info, ExifTags.GPSTAGS
+        )
+    return str_exif
+
+
+def exif_to_pil_exif(
+    exif: Union[dict, Image.Exif], strip_str: bool = False
+) -> Image.Exif:
+    if isinstance(exif, Image.Exif):
+        return exif
+
+    str_tags = {v: k for k, v in ExifTags.TAGS.items()}
+    str_gps_tags = {v: k for k, v in ExifTags.GPSTAGS.items()}
+    exif = change_keys(exif, str_tags, strip_str=strip_str)
+    exif_offset = exif.get(ExifTags.IFD.Exif)
+    if exif_offset:
+        if isinstance(exif_offset, dict):
+            exif_offset = change_keys(
+                exif_offset, str_tags, strip_str=strip_str
+            )
+        exif[ExifTags.IFD.Exif] = exif_offset
+    gps_info = exif.get(ExifTags.IFD.GPSInfo)
+    if gps_info:
+        if isinstance(gps_info, dict):
+            gps_info = change_keys(gps_info, str_gps_tags, strip_str=strip_str)
+        exif[ExifTags.IFD.GPSInfo] = gps_info
+    pil_exif = Image.Exif()
+    pil_exif.update(exif)
+    return pil_exif
+
+
+def save_image_with_exif(
+    path: str,
+    image: Union[str, Image.Image],
+    exif: Optional[Union[dict, Image.Exif]] = None,
+    **params: Any
+) -> None:
+    if isinstance(image, str):
+        image = Image.open(image)
+
+    if exif is None:
+        exif = read_str_exif(image)
+    exif = exif_to_pil_exif(exif, strip_str=True)
+    image.save(path, exif=exif, **params)
+
+
+def rotate_image_upright(image: Union[str, Image.Image]) -> Image.Image:
+    if isinstance(image, str):
+        image = Image.open(image)
+
+    exif = read_str_exif(image)
+    orientation = exif.get("Orientation")
+    if orientation is None:
+        return image
+
+    # Flip
+    if orientation in {2, 4}:
+        image = image.transpose(Image.FLIP_LEFT_RIGHT)
+        orientation -= 1
+    elif orientation in {5, 7}:
+        image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        orientation += 1
+
+    # Rotate
+    if orientation == 3:
+        image = image.rotate(180, expand=True)
+    elif orientation == 6:
+        image = image.rotate(-90, expand=True)
+    elif orientation == 8:
+        image = image.rotate(90, expand=True)
+    exif["Orientation"] = 1
+
+    pil_exif = exif_to_pil_exif(exif, strip_str=True)
+    pil_exif._loaded = True
+    image._exif = pil_exif
+    return image

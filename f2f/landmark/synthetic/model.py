@@ -172,7 +172,9 @@ class FDSyntheticLM2dInference(SyntheticLM2dInference):
     def threshold(self) -> float:
         return self.FD_model.threshold
 
-    def _apply(self, fn: Callable[..., Any]) -> "FDSyntheticLM2dInference":
+    def _apply(
+        self, fn: Callable[..., Any], recurse: bool = True
+    ) -> "FDSyntheticLM2dInference":
         if "t" in fn.__code__.co_varnames:
             with torch.no_grad():
                 null_tensor = torch.empty(0)
