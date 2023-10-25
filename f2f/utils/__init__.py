@@ -153,7 +153,7 @@ def download_url_to_file(
     Download object at the given URL to a local path.
     Reference to `torch.hub.download_url_to_file`.
     """
-    request = Request(url, headers={"User-Agent": "torch.hub"})
+    request = Request(url, headers={"User-Agent": "torch.hub"})  # noqa: S310
     u = urlopen(request)  # noqa: S310
     meta = u.info()
     if hasattr(meta, "getheaders"):
