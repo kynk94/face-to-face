@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -16,9 +16,11 @@ from torch import Tensor
 
 
 class FLAMEOrthographicRenderer(nn.Module):
-    def __init__(self, resolution: int = 224) -> None:
+    def __init__(self, resolution: Union[Sequence[int], int] = 224) -> None:
         super().__init__()
         self.device = torch.device("cpu")
+        if isinstance(resolution, int):
+            resolution = (resolution, resolution)
         self.resolution = resolution
         cameras = FoVOrthographicCameras(
             R=torch.eye(3, dtype=torch.float32)[None],
@@ -59,7 +61,7 @@ class FLAMEOrthographicRenderer(nn.Module):
         xy_translation: Optional[Tensor] = None,
         scale: Optional[Union[float, Tensor]] = None,
         textures: Optional[Any] = None,
-        resolution: Optional[int] = None,
+        resolution: Optional[Union[Sequence[int], int]] = None,
     ) -> Tuple[Tensor, Fragments]:
         """
         Args:
