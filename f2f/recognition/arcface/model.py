@@ -28,9 +28,9 @@ class Arcface(nn.Module):
     def forward(self, input: Tensor) -> Tensor:
         """
         Args:
-            input: shape (B, 3, H, W) representing the input image.
+            input: shape (B, 3, H, W), range [-1, 1]
         Returns:
-            features: shape (B, 512) representing the embedding.
+            features: shape (B, 512)
         """
         return self.backbone(input)
 
@@ -40,7 +40,7 @@ class Arcface(nn.Module):
             features_1: shape (B, 512) representing embedding of first image.
             features_2: shape (B, 512) representing embedding of second image.
         Returns:
-            distance: shape (B) representing the cosine distance between the \
+            distance: shape (B,) representing the cosine distance between the \
                 two embeddings.
         """
         features_1 = F.normalize(features_1, p=2, dim=1)
