@@ -49,9 +49,9 @@ class FLAMEONNX(BaseONNX):
             jaw_rotation: (N, 3)
             eyes_rotation: (N, 6)
         Returns:
-            vertices: (N, 3)
-            landmarks: (68, 2)
-            texture: (N, 3)
+            vertices: (N, 5023, 3)
+            dynamic_lm17: (N, 17, 3)
+            static_lm68: (N, 68, 3)
         """
         N = 1
         sizes = (300, 100, 3, 3, 3, 6)
