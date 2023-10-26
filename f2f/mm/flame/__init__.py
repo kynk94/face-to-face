@@ -1,3 +1,4 @@
-from .model import FLAME, FLAME_MODELS, FLAMETexture
+from .onnx import FLAMEONNX
+from .utils import FLAME_MODELS
 
-__all__ = ["FLAME", "FLAME_MODELS", "FLAMETexture"]
+__all__ = ["FLAMEONNX", "FLAME_MODELS"]

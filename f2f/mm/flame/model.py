@@ -15,7 +15,6 @@
 """
 import os
 import pickle
-from enum import Enum
 from typing import Any, Dict, Optional, Tuple, Union, cast
 
 import numpy as np
@@ -30,6 +29,7 @@ from f2f.mm.flame.lbs import (
     rot_mat_to_euler,
     vertices2landmarks,
 )
+from f2f.mm.flame.utils import FLAME_MODELS, TEXTURE_COORD, load_flame
 from f2f.utils import (
     get_onnx_cache_dir,
     rename_file_with_hash,
@@ -37,15 +37,7 @@ from f2f.utils import (
 )
 from f2f.utils.onnx_ops import OnnxExport
 
-
-class FLAME_MODELS(Enum):
-    _2020 = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2020_generic-ffd4033d.pkl"
-    _2023 = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2023-8fb1af0d.pkl"
-    _2023_NO_JAW = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame2023_no_jaw-b291fcd1.pkl"
-
-
 LANDMARK_EMBEDDING = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame_landmark-8095348e.npy"
-TEXTURE_COORD = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame_texture_coord-f8d5f559.pkl"
 
 
 @OnnxExport()
@@ -118,25 +110,6 @@ def to_np(array: Any, dtype: npt.DTypeLike = np.float32) -> npt.NDArray:
     if "scipy.sparse" in str(type(array)):
         array = array.todense()
     return np.array(array, dtype=dtype)
-
-
-def load_flame(path: str) -> Dict[str, Any]:
-    path = url_to_local_path(path)
-    try:
-        with open(path, "rb") as f:
-            return pickle.load(f, encoding="latin1")  # noqa: S301
-    except ModuleNotFoundError:
-        raise
-    except ImportError:
-        setattr(np, "bool", bool)
-        setattr(np, "int", int)
-        setattr(np, "float", float)
-        setattr(np, "complex", np.complex_)
-        setattr(np, "object", object)
-        setattr(np, "unicode", np.unicode_)
-        setattr(np, "str", str)
-        with open(path, "rb") as f:
-            return pickle.load(f, encoding="latin1")  # noqa: S301
 
 
 class FLAME(nn.Module):
@@ -415,7 +388,7 @@ class FLAME(nn.Module):
         rel_rot_mat = torch.eye(
             3, device=rotations.device, dtype=self.dtype
         ).expand(N, -1, -1)
-        for idx in range(len(self.neck_kin_chain)):
+        for idx in range(self.neck_kin_chain.size(0)):
             rel_rot_mat = torch.bmm(rot_mats[:, idx], rel_rot_mat)
 
         y_rot_angle = torch.round(
