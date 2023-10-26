@@ -5,11 +5,12 @@ import torch.nn as nn
 from pytorch3d.renderer import (
     DirectionalLights,
     FoVOrthographicCameras,
+    HardPhongShader,
     MeshRasterizer,
     RasterizationSettings,
-    SoftPhongShader,
     TexturesVertex,
 )
+from pytorch3d.renderer.mesh.rasterizer import Fragments
 from pytorch3d.structures import Meshes
 from torch import Tensor
 
@@ -34,7 +35,7 @@ class FLAMEOrthographicRenderer(nn.Module):
         self.rasterizer = MeshRasterizer(
             cameras=cameras, raster_settings=raster_settings
         )
-        self.shader = SoftPhongShader(cameras=cameras, lights=lights)
+        self.shader = HardPhongShader(cameras=cameras, lights=lights)
 
     def _apply(
         self, fn: Callable[..., Any], recurse: bool = True
@@ -59,7 +60,23 @@ class FLAMEOrthographicRenderer(nn.Module):
         scale: Optional[Union[float, Tensor]] = None,
         textures: Optional[Any] = None,
         resolution: Optional[int] = None,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> Tuple[Tensor, Fragments]:
+        """
+        Args:
+            verts: shape (N, V, 3)
+            faces: shape (N, F, 3)
+            xy_translation: shape (N, 2) translation in the x and y directions
+            scale: shape (N,) scale to apply to mesh.
+            textures: Optional object of type Textures.
+            resolution: Optional resolution to render at.
+        Returns:
+            images: shape (N, 4, H, W) RGBA images
+            fragments: Fragments object
+                pix_to_face: shape (N, H, W, k), k is faces_per_pixel
+                zbuf: shape (N, H, W, k)
+                bary_coords: shape (N, H, W, k, 3)
+                dists: shape (N, H, W, k)
+        """
         if xy_translation is not None:
             verts[..., :2] = verts[..., :2] + xy_translation
         if scale is not None:
@@ -80,5 +97,5 @@ class FLAMEOrthographicRenderer(nn.Module):
             resolution = self.resolution
         self.rasterizer.raster_settings.image_size = resolution
         fragments = self.rasterizer(mesh)
-        images = self.shader(fragments, mesh)
-        return images, fragments
+        images: Tensor = self.shader(fragments, mesh)
+        return images.permute(0, 3, 1, 2), fragments
