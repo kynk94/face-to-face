@@ -1,3 +1,3 @@
-from .onnx import EMOCAONNX
+from .onnx import EMICAONNX, EMOCAONNX, MICAONNX
 
-__all__ = ["EMOCAONNX"]
+__all__ = ["EMICAONNX", "EMOCAONNX", "MICAONNX"]
