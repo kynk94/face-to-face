@@ -103,7 +103,7 @@ def linear_blend_skinning(
         vertices: (N, V, 3), deformed mesh vertices
         joints: (N, J, 3), joint locations
     """
-    N = max(shape_parameters.size(0), rotations.size(0))
+    N = shape_parameters.size(0)
     device = shape_parameters.device
 
     # Add shape contribution

@@ -17,3 +17,9 @@
 
 * [paper](https://ps.is.mpg.de/uploads_file/attachment/attachment/686/EMOCA__CVPR22.pdf)
 * [github](https://github.com/radekd91/emoca)
+
+### MICA
+
+* [paper](https://arxiv.org/abs/2204.06607)
+* [github](https://github.com/Zielon/MICA)
+* [project](https://zielon.github.io/mica/)
