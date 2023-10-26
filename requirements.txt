@@ -2,6 +2,7 @@ imageio
 imageio-ffmpeg
 numpy
 onnxruntime-gpu
+opencv-python
 pillow
 timm
 torch
