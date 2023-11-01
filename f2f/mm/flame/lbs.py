@@ -21,6 +21,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from f2f.utils.onnx_ops import onnx_atan2
+from f2f.utils.transforms_torch import batch_rodrigues
 
 
 def rot_mat_to_euler(rot_mats: Tensor) -> Tensor:
@@ -82,7 +83,6 @@ def linear_blend_skinning(
     J_regressor: Tensor,
     parents: Tensor,
     lbs_weights: Tensor,
-    rot2mat: bool = True,
     dtype: torch.dtype = torch.float32,
 ) -> Tuple[Tensor, Tensor]:
     """
@@ -90,14 +90,14 @@ def linear_blend_skinning(
 
     Args:
         shape_parameters: (N, B), shape parameters
-        rotations: (N, (J+1)*3), rotation parameters in radian axis-angle format
+        rotations: (N, J*3), rotation parameters in radian axis-angle format
+            or (N, J, 3, 3) rotation matrices
         shape_mean: (N, V, 3), template mesh that will be deformed
         shape_coeff: (1, V, NB), PCA shape displacements
         rotation_coeff: (P, V, 3), pose PCA coefficients
         J_regressor: (V, J), regressor that maps from vertices to joints
         parents: (J), indices of the parents for each joint
         lbs_weights: (N, V, J), weights of the linear blend skinning
-        rot2mat: If True, the rotations are converted to a rotation matrix
         dtype: data type of the output
     Returns:
         vertices: (N, V, 3), deformed mesh vertices
@@ -117,13 +117,13 @@ def linear_blend_skinning(
     # J: 5 joints = (global, neck, jaw, left_eye, right_eye)
     # rot_mats: (N, J, 3, 3)
     ident = torch.eye(3, dtype=dtype, device=device)
-    if rot2mat:
-        rotation_matrix = batch_rodrigues(
-            rotations.view(-1, 3), dtype=dtype
-        ).view(N, -1, 3, 3)
+    if rotations.ndim == 2:
+        rotation_matrix = batch_rodrigues(rotations.view(-1, 3)).view(
+            N, -1, 3, 3
+        )
     else:
         rotation_matrix = rotations.view(N, -1, 3, 3)
-    rotation_feature = (rotation_matrix[:, 1:, :, :] - ident).view([N, -1])
+    rotation_feature = (rotation_matrix[:, 1:, :, :] - ident).view(N, -1)
     # (N x P) x (P, V * 3) -> N x V x 3
     rotation_offsets = torch.matmul(rotation_feature, rotation_coeff).view(
         N, -1, 3
@@ -184,45 +184,6 @@ def blend_shapes(betas: Tensor, shape_displacement: Tensor) -> Tensor:
     return blend_shape
 
 
-def batch_rodrigues(
-    rot_vecs: Tensor, epsilon: float = 1e-8, dtype: torch.dtype = torch.float32
-) -> Tensor:
-    """
-    Calculates the rotation matrices for a batch of rotation vectors.
-    See https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
-
-    Args:
-        rot_vecs: (N, 3), array of N axis-angle vectors
-    Returns:
-        rotation_matrix: (N, 3, 3), rotation matrices for the given axis-angle
-    """
-
-    batch_size = rot_vecs.shape[0]
-    device = rot_vecs.device
-
-    angle = torch.norm(rot_vecs + epsilon, dim=1, keepdim=True)
-    rot_dir = rot_vecs / angle
-
-    cos = torch.cos(angle).unsqueeze(1)
-    sin = torch.sin(angle).unsqueeze(1)
-
-    # Bx1 arrays
-    rx, ry, rz = torch.split(rot_dir, 1, dim=1)
-
-    zeros = torch.zeros((batch_size, 1), dtype=dtype, device=device)
-    # fmt: off
-    K = torch.cat([
-        zeros,   -rz,    ry,
-           rz, zeros,   -rx,
-          -ry,    rx, zeros
-    ], dim=1).view((batch_size, 3, 3))
-    # fmt: on
-
-    ident = torch.eye(3, dtype=dtype, device=device).unsqueeze(dim=0)
-    rotation_matrix = ident + sin * K + (1 - cos) * torch.bmm(K, K)
-    return rotation_matrix
-
-
 def transform_mat(R: Tensor, t: Tensor) -> Tensor:
     """Creates a batch of transformation matrices
     Args:
@@ -261,10 +222,10 @@ def batch_rigid_transform(
 
     transforms_mat = transform_mat(
         rot_mats.view(-1, 3, 3), rel_joints.reshape(-1, 3, 1)
-    ).reshape(-1, joints.shape[1], 4, 4)
+    ).reshape(-1, joints.size(1), 4, 4)
 
     transform_chain = [transforms_mat[:, 0]]
-    for i in range(1, parents.shape[0]):
+    for i in range(1, parents.size(0)):
         # Subtract the joint location at the rest pose
         # No need for rotation, since it's identity when at rest
         curr_res = torch.matmul(

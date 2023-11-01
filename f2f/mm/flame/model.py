@@ -15,7 +15,7 @@
 """
 import os
 import pickle
-from typing import Any, Dict, Optional, Tuple, Union, cast
+from typing import Any, Callable, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -24,7 +24,6 @@ import torch.nn as nn
 from torch import Tensor
 
 from f2f.mm.flame.lbs import (
-    batch_rodrigues,
     linear_blend_skinning,
     rot_mat_to_euler,
     vertices2landmarks,
@@ -36,8 +35,10 @@ from f2f.utils import (
     url_to_local_path,
 )
 from f2f.utils.onnx_ops import OnnxExport
+from f2f.utils.transforms_torch import batch_rodrigues, rotation_6d_to_matrix
 
 LANDMARK_EMBEDDING = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame_landmark-8095348e.npy"
+TEXTURE_PATH = "https://github.com/kynk94/face-to-face/releases/download/weights-v0.1/flame_texture-1cb46349.npz"
 
 
 @OnnxExport()
@@ -45,10 +46,12 @@ def onnx_export() -> None:
     model = FLAME().eval()
     identity_params = torch.randn(1, 300, dtype=torch.float32)
     expression_params = torch.randn(1, 100, dtype=torch.float32)
-    global_rotation = torch.randn(1, 3, dtype=torch.float32)
-    neck_rotation = torch.randn(1, 3, dtype=torch.float32)
-    jaw_rotation = torch.randn(1, 3, dtype=torch.float32)
-    eyes_rotation = torch.randn(1, 6, dtype=torch.float32)
+    rodrigues_vector = torch.randn(5, 3, dtype=torch.float32)
+    rotation_matrix = batch_rodrigues(rodrigues_vector)
+    global_rotation = rotation_matrix[0:1]  # (1, 3, 3)
+    neck_rotation = rotation_matrix[1:2]  # (1, 3, 3)
+    jaw_rotation = rotation_matrix[2:3]  # (1, 3, 3)
+    eyes_rotation = rotation_matrix[3:5].unsqueeze(0)  # (1, 2, 3, 3)
 
     file_name = (
         os.path.splitext(os.path.basename(FLAME_MODELS._2020.value))[0]
@@ -126,7 +129,7 @@ class FLAME(nn.Module):
     ft: Tensor
     """shape (9976, 3) obj ft, texture face indices"""
     vt: Tensor
-    """shape (5023, 2) obj vt, texture coordinates"""
+    """shape (5118, 2) obj vt, texture coordinates"""
     identity_coeff: Tensor
     """shape (5023, 3, 300)"""
     expression_coeff: Tensor
@@ -144,8 +147,6 @@ class FLAME(nn.Module):
     """
     shape (5023, 5) linear blend skinning weights that represent how much the
     rotation matrix of each part affects each vertex"""
-    zero_rotation: nn.Parameter
-    """shape (1, 3)"""
     dynamic_lm_faces_idx: Tensor
     """
     shape (79, 17) list of 17 contour face indexes for y angle (-39, 39) degrees
@@ -224,11 +225,6 @@ class FLAME(nn.Module):
             to_tensor(to_np(flame_model["weights"]), dtype=self.dtype),
         )
 
-        zero_rotation = torch.zeros(
-            [1, 3], dtype=self.dtype, requires_grad=False
-        )
-        self.register_buffer("zero_rotation", zero_rotation)
-
         # Static and Dynamic Landmark embeddings for FLAME
         lmk_embeddings = np.load(
             url_to_local_path(LANDMARK_EMBEDDING),
@@ -272,86 +268,88 @@ class FLAME(nn.Module):
         eyes_rotation: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor, Tensor]:
         """
-        args:
+        Args:
             identity_params: (N, <=300)
             expression_params: (N, <=100)
-            global_rotation: (N, 3) in radians
-            neck_rotation: (N, 3) in radians
-            jaw_rotation: (N, 3) in radians
-            eyes_rotation: (N, 6) in radians (3 for left, 3 for right)
+            global_rotation: (N, 3) in rodrigues vector or (N, 6) in 6d rotation
+            neck_rotation: (N, 3) in rodrigues vector or (N, 6) in 6d rotation
+            jaw_rotation: (N, 3) in rodrigues vector or (N, 6) in 6d rotation
+            eyes_rotation: (N, 6) in rodrigues vector (3 left, 3 right)\
+                or (N, 12) in 6d rotation (6 left, 6 right)
                 axis direction:
                     x: head center -> left ear (head pitch axis)
                     y: head center -> top (head yaw axis)
                     z: head center -> forward of the face (head roll axis)
-        return:
+        Returns:
             vertices: (N, 5023, 3)
             dynamic_lm17: (N, 17, 3)
             static_lm68: (N, 68, 3)
         """
-        if identity_params is None and expression_params is None:
-            raise ValueError(
-                "Either identity_params or expression_params should be provided"
-            )
+        N = 1
+        for input in (
+            identity_params,
+            expression_params,
+            global_rotation,
+            neck_rotation,
+            jaw_rotation,
+            eyes_rotation,
+        ):
+            if input is None:
+                continue
+            N = input.size(0)
+            break
         if identity_params is None:
-            expression_params = cast(Tensor, expression_params)
-            N = expression_params.size(0)
-            N_id = self.identity_coeff.size(-1)
-            N_exp = expression_params.size(-1)
             identity_params = torch.zeros(
-                (1, N_id),
-                dtype=self.dtype,
-                device=expression_params.device,
+                1, dtype=self.dtype, device=self.v.device
             ).expand(N, -1)
-        else:
-            N = identity_params.size(0)
-            N_id = identity_params.size(-1)
-            if expression_params is None:
-                N_exp = self.expression_coeff.size(-1)
-                expression_params = torch.zeros(
-                    (1, N_exp),
-                    dtype=self.dtype,
-                    device=identity_params.device,
-                ).expand(N, -1)
-            else:
-                N_exp = expression_params.size(-1)
-        if global_rotation is None:
-            global_rotation = self.zero_rotation.expand(N, -1)
-        if neck_rotation is None:
-            neck_rotation = self.zero_rotation.expand(N, -1)
-        if jaw_rotation is None:
-            jaw_rotation = self.zero_rotation.expand(N, -1)
-        if eyes_rotation is None:
-            eyes_rotation = self.zero_rotation.repeat(1, 2).expand(N, -1)
-
-        rotations = torch.cat(
-            (global_rotation, neck_rotation, jaw_rotation, eyes_rotation),
+        if expression_params is None:
+            expression_params = torch.zeros(
+                1, dtype=self.dtype, device=self.v.device
+            ).expand(N, -1)
+        shape_parameters = torch.cat(
+            (identity_params, expression_params), dim=-1
+        )
+        shape_coeff = torch.cat(
+            (
+                self.identity_coeff[..., : identity_params.size(-1)],
+                self.expression_coeff[..., : expression_params.size(-1)],
+            ),
             dim=-1,
         )
+
+        if eyes_rotation is None:
+            left_eye = right_eye = None
+        elif eyes_rotation.ndim == 4:  # rotation matrix fomula, (N, 2, 3, 3)
+            left_eye, right_eye = eyes_rotation[:, 0], eyes_rotation[:, 1]
+        else:  # rodrigues vector or 6d rotation, (N, 6) or (N, 12)
+            left_eye, right_eye = torch.split(
+                eyes_rotation, eyes_rotation.size(-1) // 2, dim=-1
+            )
+        rotation_matrix = self.calculate_rotation_matrix(
+            global_rotation,
+            neck_rotation,
+            jaw_rotation,
+            left_eye,
+            right_eye,
+            batch_size=N,
+        )  # (N, 5, 3, 3)
+
         vertices, _ = linear_blend_skinning(
-            shape_parameters=torch.cat(
-                (identity_params, expression_params), dim=1
-            ),
-            rotations=rotations,
+            shape_parameters=shape_parameters,
+            rotations=rotation_matrix,
             shape_mean=self.v.expand(N, -1, -1),
-            shape_coeff=torch.cat(
-                (
-                    self.identity_coeff[..., :N_id],
-                    self.expression_coeff[..., :N_exp],
-                ),
-                dim=-1,
-            ),
+            shape_coeff=shape_coeff,
             rotation_coeff=self.rotation_coeff,
             J_regressor=self.joint_regressor,
             parents=self.parents,
             lbs_weights=self.lbs_weights,
-            rot2mat=True,
             dtype=self.dtype,
         )
 
         (
             dynamic_lm_faces_idx,
             dynamic_lm_bary_coords,
-        ) = self._find_dynamic_lm_idx_and_bcoords(rotations)
+        ) = self._find_dynamic_lm_idx_and_bcoords(rotation_matrix)
         dynamic_lm17 = vertices2landmarks(
             vertices, self.f, dynamic_lm_faces_idx, dynamic_lm_bary_coords
         )
@@ -364,29 +362,23 @@ class FLAME(nn.Module):
         return vertices, dynamic_lm17, static_lm68
 
     def _find_dynamic_lm_idx_and_bcoords(
-        self, rotations: Tensor
+        self, rotation_matrix: Tensor
     ) -> Tuple[Tensor, Tensor]:
         """
         Selects the face contour depending on the reletive rotations of the head
         Args:
-            rotations: shape (N, 15), rotations of global 3, eyes 6, jaw 3, \
-                neck 3
+            rotation_matrix: shape (N, J, 3, 3)
         Returns:
             dynamic_lm_faces_idx:
                 shape (N, 17), the contour face indexes
             dynamic_lm_bary_coords:
                 shape (N, 17, 3), the contour face barycentric weights
         """
-        N = rotations.size(0)
-        aa_pose = torch.index_select(
-            rotations.view(N, -1, 3), 1, self.neck_kin_chain
-        )
-        rot_mats = batch_rodrigues(aa_pose.view(-1, 3), dtype=self.dtype).view(
-            N, -1, 3, 3
-        )
+        N = rotation_matrix.size(0)
+        rot_mats = torch.index_select(rotation_matrix, 1, self.neck_kin_chain)
 
         rel_rot_mat = torch.eye(
-            3, device=rotations.device, dtype=self.dtype
+            3, device=rotation_matrix.device, dtype=self.dtype
         ).expand(N, -1, -1)
         for idx in range(self.neck_kin_chain.size(0)):
             rel_rot_mat = torch.bmm(rot_mats[:, idx], rel_rot_mat)
@@ -408,89 +400,93 @@ class FLAME(nn.Module):
         )
         return dynamic_lm_faces_idx, dynamic_lm_bary_coords
 
+    def calculate_rotation_matrix(
+        self, *rotations: Optional[Tensor], batch_size: Optional[int] = None
+    ) -> Tensor:
+        """
+        Calculate the rotation matrix from the given rotation parameters.
+
+        Args:
+            *rotations: (N, 3) or (N, 6) or (N, 3, 3) or None
+            batch_size: batch size of the output rotation matrix
+        Returns:
+            rotation_matrix: (N, J, 3, 3), J is the number of input rotations
+        """
+        N = batch_size or 1
+        get_zero_rotation = self.zero_rotation_matrix
+        calculation: Optional[Callable[..., Tensor]] = None
+        for rotation in rotations:
+            if rotation is None:
+                continue
+            N = rotation.size(0)
+            if rotation.shape[1:] == (6,):
+                get_zero_rotation = self.zero_rotation_6d
+                calculation = rotation_6d_to_matrix
+            elif rotation.shape[1:] == (3,):
+                get_zero_rotation = self.zero_rotation_rodrigues
+                calculation = batch_rodrigues
+            elif rotation.shape[1:] != (3, 3):
+                raise ValueError(
+                    "rotation shape must be (N, 3) or (N, 6) or (N, 3, 3), "
+                    f"but got {rotation.shape}"
+                )
+            break
+
+        filled_rotations = tuple(
+            r if r is not None else get_zero_rotation(N) for r in rotations
+        )
+        rotation_matrix = torch.cat(filled_rotations, dim=0)
+        if calculation is not None:
+            rotation_matrix = calculation(rotation_matrix)
+        return rotation_matrix.view(N, -1, 3, 3)
+
+    def zero_rotation_matrix(self, batch_size: int) -> Tensor:
+        """return (N, 3, 3) tensor"""
+        eye = torch.eye(3, dtype=self.dtype, device=self.v.device)
+        zero_rotation_matrix = eye.expand(batch_size, -1, -1)
+        return zero_rotation_matrix
+
+    def zero_rotation_6d(self, batch_size: int) -> Tensor:
+        """return (N, 6) tensor"""
+        eye = torch.eye(3, dtype=self.dtype, device=self.v.device)
+        zero_rotation_6d = eye[:2].ravel().expand(batch_size, -1)
+        return zero_rotation_6d
+
+    def zero_rotation_rodrigues(self, batch_size: int) -> Tensor:
+        """return (N, 3) tensor"""
+        zero_rotation_rodrigues = torch.zeros(
+            3, dtype=self.dtype, device=self.v.device
+        ).expand(batch_size, -1)
+        return zero_rotation_rodrigues
+
 
 class FLAMETexture(nn.Module):
     """
     current FLAME texture are adapted from BFM Texture Model
     """
 
-    texture_mean: Tensor
-    """(1, 1, 786432 = 512*512*3)"""
-    texture_basis: Tensor
-    """(1, 786432 = 512*512*3, 200)"""
-    verts_uv: Tensor
-    """(1, 5118, 2)"""
-    faces_uv: Tensor
-    """(1, 9976, 3)"""
+    mean: Tensor
+    """(3, 512, 512) in RGB [0, 1]"""
+    basis: Tensor
+    """(3, 512, 512, 200) in RGB"""
 
-    def __init__(self, texture_path: str) -> None:
+    def __init__(self) -> None:
         super().__init__()
         # mean: (512, 512, 3), tex_dir: (512, 512, 3, 200)
-        tex_space = np.load(url_to_local_path(texture_path))
+        tex_space = np.load(url_to_local_path(TEXTURE_PATH))
         # BFM texture is in BGR order, flip to RGB
-        texture_mean = np.flip(tex_space["mean"], axis=2).reshape(1, 1, -1)
-        texture_basis = np.flip(tex_space["tex_dir"], axis=2).reshape(
-            1, -1, 200
-        )
-        texture_mean = torch.from_numpy(texture_mean).float()
-        texture_basis = torch.from_numpy(texture_basis).float()
-        self.register_buffer("texture_mean", texture_mean)
-        self.register_buffer("texture_basis", texture_basis)
+        mean = np.transpose(tex_space["mean"], (2, 0, 1)) / 127.5 - 1.0
+        basis = np.transpose(tex_space["tex_dir"], (2, 0, 1, 3)) / 127.5
+        mean = torch.from_numpy(np.flip(mean, 0).copy()).float()
+        basis = torch.from_numpy(np.flip(basis, 0).copy()).float()
+        self.register_buffer("mean", mean)
+        self.register_buffer("basis", basis)
 
-        verts_uv = torch.from_numpy(tex_space["vt"]).float().reshape(1, -1, 2)
-        faces_uv = (
-            torch.from_numpy(tex_space["ft"].astype(np.int64))
-            .long()
-            .reshape(1, -1, 3)
-        )
-        self.register_buffer("verts_uv", verts_uv)
-        self.register_buffer("faces_uv", faces_uv)
-
-    @property
-    def vt(self) -> Tensor:
-        """(1, 5118, 2)"""
-        return self.verts_uv
-
-    @property
-    def ft(self) -> Tensor:
-        """(1, 9976, 3)"""
-        return self.faces_uv
-
-    def forward(self, input: Tensor) -> Tensor:
+    def forward(self, texture_params: Tensor) -> Tensor:
         """
-        input: (N, texture_params<=200)
-        return: (N, 3, 512, 512)
+        texture_params: (N, <=200)
+        return: (N, 3, 512, 512), in RGB [-1, 1], not clamped.
         """
-        if input.ndim == 2:
-            input = input.unsqueeze(1)
-        if input.size(-1) > 200:
-            raise ValueError("texture_params must <= 200")
-        texture_basis = self.texture_basis[..., input.size(-1)]
-        texture = self.texture_mean + (texture_basis * input).sum(-1)
-        texture = texture.reshape(input.size(0), 512, 512, 3).permute(
-            0, 3, 1, 2
-        )
-        return texture
-
-    def get_texture_kwargs(
-        self, input: Tensor, mode: str = "pytorch3d"
-    ) -> Dict[str, Tensor]:
-        """
-        Args:
-            input: (N, texture_params<=200)
-        Returns:
-            Dict[
-                maps: (N, 3, 512, 512),
-                faces_uvs: (N, 9976, 3),
-                verts_uvs: (N, 5118, 2),
-            ]
-        """
-        if mode != "pytorch3d":
-            raise NotImplementedError("only support pytorch3d mode")
-
-        batch_size = input.shape[0]
-        texture = self.forward(input)
-        texture = texture.permute(0, 2, 3, 1).div(255.0).clamp(0.0, 1.0)
-        faces_uvs = self.faces_uv.expand(batch_size, -1, -1)
-        verts_uvs = self.verts_uv.expand(batch_size, -1, -1)
-        return {"maps": texture, "faces_uvs": faces_uvs, "verts_uvs": verts_uvs}
+        basis = self.basis[..., : texture_params.size(-1)]
+        differences = torch.einsum("chwi,ni->nchw", basis, texture_params)
+        return self.mean + differences
